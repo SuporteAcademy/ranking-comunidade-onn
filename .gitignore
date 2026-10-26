@@ -1,0 +1,22 @@
+node_modules
+dist
+.DS_Store
+*.local
+
+# Variáveis de ambiente
+.env
+.env.*
+!.env.example
+
+# Dados reais: planilhas de exemplo, exportações e backups nunca vão para o repositório
+exemplos-de-planilhas/
+*.xlsx
+*.xls
+*.csv
+backup-ranking-onn-*.json
+
+# Testes que rodam em cima das planilhas reais (só funcionam localmente)
+*.local.test.ts
+
+# Gerado pelo build
+*.tsbuildinfo

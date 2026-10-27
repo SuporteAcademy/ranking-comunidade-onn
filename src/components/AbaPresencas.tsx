@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { RankingMes } from '../lib/calculo';
 import { rotuloStatus } from '../lib/exportacoes';
-import { dataBR, formatarMinutos, nomeMes } from '../lib/texto';
+import { dataBR, formatarMinutos, minutosMinimos, nomeMes } from '../lib/texto';
 import { STATUS_CONTA, type Encontro, type Pessoa, type ResultadoEncontro, type ResultadoLinha } from '../lib/types';
 import { nomeCompleto } from '../lib/vinculo';
 import { useDados } from '../state/dados';
@@ -74,7 +74,7 @@ export function AbaPresencas({
 
   const enc = sel!;
   const totalPendentes = enc.linhas.filter((r) => r.status === 'sugestao' || r.status === 'sem_vinculo').length;
-  const minimoMin = Math.round(enc.minimoSeg / 60);
+  const minimoMin = minutosMinimos(enc.minimoSeg);
 
   // Resumo do mês: quem foi a quais encontros
   const pessoasMes = new Map<string, { nome: string; email: string; por: Map<string, { seg: number; ok: boolean }> }>();

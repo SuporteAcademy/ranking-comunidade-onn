@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { mesDe, type RankingMes } from '../lib/calculo';
+import { noPeriodo, type RankingMes } from '../lib/calculo';
 import { baixarPlanilhaPlataforma, baixarRanking, textoCanal } from '../lib/exportacoes';
-import { normalizar, nomeMes } from '../lib/texto';
-import type { LinhaRanking } from '../lib/types';
+import { dataBR, normalizar, nomeMes } from '../lib/texto';
+import { CRITERIOS_DESEMPATE, type LinhaRanking } from '../lib/types';
 import { useDados } from '../state/dados';
+import { PeriodoPlataforma } from './PeriodoPlataforma';
 import { Aviso, Vazio, fmt } from './ui';
 
 function Movimento({ l }: { l: LinhaRanking }) {
@@ -15,14 +16,22 @@ function Movimento({ l }: { l: LinhaRanking }) {
   return <span className="mov igual" title={titulo}>=</span>;
 }
 
-export function AbaRanking({ ranking, onIrPresencas }: { ranking: RankingMes; onIrPresencas: () => void }) {
+export function AbaRanking({
+  ranking,
+  onIrPresencas,
+  onIrAjustes,
+}: {
+  ranking: RankingMes;
+  onIrPresencas: () => void;
+  onIrAjustes: () => void;
+}) {
   const { dados, atualizar } = useDados();
   const [busca, setBusca] = useState('');
   const [copiado, setCopiado] = useState(false);
 
   const { linhas, encontros, eventosContados, excluidos } = ranking;
   const pendencias = encontros.reduce((s, e) => s + e.pendenciasRelevantes, 0);
-  const temEventosNoMes = dados.eventos.some((e) => mesDe(e.data) === ranking.mes);
+  const temEventosNoPeriodo = dados.eventos.some((e) => noPeriodo(e.data, ranking.periodo));
   const empatePremio = linhas.filter((l) => l.posicao <= 2 && l.empatado);
   const lideresPlataforma = linhas.filter((l) => l.posicaoPlataforma === 1);
   const filtradas = busca.trim()
@@ -46,8 +55,18 @@ export function AbaRanking({ ranking, onIrPresencas }: { ranking: RankingMes; on
         <div>
           <h2>Ranking oficial · {nomeMes(ranking.mes)}</h2>
           <p>
-            Pontos da plataforma ({eventosContados.join(' + ') || 'nenhum evento marcado'}) + {dados.config.pontosAoVivo} por ao
-            vivo com presença.
+            Pontos da plataforma de {dataBR(ranking.periodo.inicio)} a {dataBR(ranking.periodo.fim)} (
+            {eventosContados.join(' + ') || 'nenhum evento marcado'}) + {dados.config.pontosAoVivo} por ao vivo com presença.
+          </p>
+          <p className="small">
+            Desempate:{' '}
+            {dados.config.desempate.length
+              ? dados.config.desempate.map((c) => CRITERIOS_DESEMPATE[c].toLowerCase()).join(' → ')
+              : 'nenhum critério'}{' '}
+            ·{' '}
+            <button className="btn link" onClick={onIrAjustes}>
+              alterar
+            </button>
           </p>
         </div>
         <div className="linha">
@@ -62,6 +81,12 @@ export function AbaRanking({ ranking, onIrPresencas }: { ranking: RankingMes; on
           </button>
         </div>
       </div>
+
+      {dados.eventos.length > 0 && (
+        <div className="cartao">
+          <PeriodoPlataforma mes={ranking.mes} />
+        </div>
+      )}
 
       {pendencias > 0 && (
         <Aviso>
@@ -79,16 +104,21 @@ export function AbaRanking({ ranking, onIrPresencas }: { ranking: RankingMes; on
           <p>Nenhum encontro ao vivo importado para este mês — por enquanto o ranking é só o da plataforma (parcial).</p>
         </Aviso>
       )}
-      {!temEventosNoMes && dados.eventos.length > 0 && (
+      {!temEventosNoPeriodo && dados.eventos.length > 0 && (
         <Aviso>
-          <p>A planilha de pontos importada não tem nenhum lançamento neste mês. Importe o relatório atualizado da plataforma.</p>
+          <p>
+            A planilha de pontos importada não tem nenhum lançamento entre {dataBR(ranking.periodo.inicio)} e{' '}
+            {dataBR(ranking.periodo.fim)}. Confira o período ou importe o relatório atualizado da plataforma.
+          </p>
         </Aviso>
       )}
       {empatePremio.length > 1 && (
         <Aviso tipo="ruim">
           <p>
             <strong>Empate na zona de premiação:</strong> {empatePremio.map((l) => `${l.nome} (${fmt(l.total)})`).join(', ')}.
-            Defina o critério de desempate antes de divulgar.
+            {dados.config.desempate.length
+              ? ' Eles empatam também nos critérios de desempate — decida antes de divulgar ou acrescente outro critério em Ajustes.'
+              : ' Escolha um critério de desempate em Ajustes antes de divulgar.'}
           </p>
         </Aviso>
       )}
@@ -190,7 +220,15 @@ export function AbaRanking({ ranking, onIrPresencas }: { ranking: RankingMes; on
                         <span className="muted">0</span>
                       )}
                     </td>
-                    <td className="dir num total">{fmt(l.total)}</td>
+                    <td className="dir num">
+                      <span className="total">{fmt(l.total)}</span>
+                      {l.decididoPor && (
+                        <div className="muted small" title="Critério que desempatou com quem tem o mesmo total">
+                          desempate: {l.decididoPor}
+                        </div>
+                      )}
+                      {l.empatado && <div className="selo ruim">empate</div>}
+                    </td>
                     <td className="dir">
                       <button className="btn mini" title="Tirar do ranking (equipe, teste…)" onClick={() => excluir(l.email)}>
                         Tirar

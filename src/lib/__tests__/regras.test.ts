@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calcularRanking, tempoCombinado } from '../calculo';
+import { calcularRanking, limitesDoMes, tempoCombinado } from '../calculo';
 import { dataDoNomeArquivo, parseDataHora, parseDuracao, ultimaQuinta } from '../planilhas';
 import { tokenBate } from '../texto';
 import { CONFIG_PADRAO, type DadosApp, type EventoPontuacao, type LinhaPresenca } from '../types';
@@ -125,10 +125,40 @@ describe('ranking', () => {
     expect(bia.total).toBe(50 + 70);
     expect(ana.posicaoPlataforma).toBe(1);
     expect(bia.posicaoPlataforma).toBe(2);
-    // empatam em 1º; na tabela, quem tem mais ao vivo aparece primeiro
-    expect([ana.posicao, bia.posicao, ana.empatado, bia.empatado]).toEqual([1, 1, true, true]);
+    // empatam em 120; bia passou mais tempo nos ao vivos e fica na frente
+    expect([bia.posicao, ana.posicao, ana.empatado, bia.empatado]).toEqual([1, 2, false, false]);
+    expect(bia.decididoPor).toBe('55 min nos ao vivos');
     expect(r.linhas[0].email).toBe('bia@x.com');
     expect(r.linhas.find((l) => l.email === 'caio@x.com')).toBeUndefined(); // 47 min < 48
+  });
+
+  it('desempate: tempo nos ao vivos conta mesmo onde não pontuou; depois, tempo de comunidade', () => {
+    const dados = base(
+      [ev('ana@x.com', 'Mensagem publicada', 30), ev('bia@x.com', 'Mensagem publicada', 30), ev('caio@x.com', 'Mensagem publicada', 30)],
+      [
+        { email: 'ana@x.com', min: 30 }, // abaixo de 48: não ganha os 70, mas o tempo conta no desempate
+        { email: 'bia@x.com', min: 10 },
+      ],
+    );
+    dados.membros = [
+      { email: 'ana@x.com', nome: 'ana', situacao: 'Ativo', membroDesde: '2025-01-10T00:00:00' },
+      { email: 'bia@x.com', nome: 'bia', situacao: 'Ativo', membroDesde: '2024-03-01T00:00:00' },
+      { email: 'caio@x.com', nome: 'caio', situacao: 'Ativo', membroDesde: '2023-05-01T00:00:00' },
+    ];
+    let r = calcularRanking(dados, '2026-10');
+    expect(r.linhas.map((l) => l.email)).toEqual(['ana@x.com', 'bia@x.com', 'caio@x.com']);
+    expect(r.linhas.map((l) => l.posicao)).toEqual([1, 2, 3]);
+
+    // invertendo a ordem: tempo de comunidade primeiro
+    dados.config = { ...CONFIG_PADRAO, desempate: ['antiguidade', 'tempoAoVivo'] };
+    r = calcularRanking(dados, '2026-10');
+    expect(r.linhas.map((l) => l.email)).toEqual(['caio@x.com', 'bia@x.com', 'ana@x.com']);
+    expect(r.linhas[0].decididoPor).toBe('membro desde 01/05/2023');
+
+    // sem critério: os três dividem o 1º lugar
+    dados.config = { ...CONFIG_PADRAO, desempate: [] };
+    r = calcularRanking(dados, '2026-10');
+    expect(r.linhas.every((l) => l.posicao === 1 && l.empatado)).toBe(true);
   });
 
   it('valor fixo substitui o da planilha', () => {
@@ -138,6 +168,34 @@ describe('ranking', () => {
       regrasEventos: { ...CONFIG_PADRAO.regrasEventos, 'Mensagem publicada': { conta: true, pontosFixos: 30 } },
     };
     expect(calcularRanking(dados, '2026-10').linhas[0].total).toBe(30);
+  });
+
+  it('limites do mês', () => {
+    expect(limitesDoMes('2026-02')).toEqual({ inicio: '2026-02-01', fim: '2026-02-28' });
+    expect(limitesDoMes('2028-02').fim).toBe('2028-02-29');
+    expect(limitesDoMes('2026-10').fim).toBe('2026-10-31');
+  });
+
+  it('período personalizado dos pontos da plataforma', () => {
+    const eventos = [
+      ev('ana@x.com', 'Mensagem publicada', 30, '2026-09-28T09:00:00'),
+      ev('ana@x.com', 'Mensagem publicada', 30, '2026-10-01T00:00:00'),
+      ev('ana@x.com', 'Mensagem publicada', 30, '2026-10-25T23:59:59'),
+      ev('ana@x.com', 'Mensagem publicada', 30, '2026-10-26T08:00:00'),
+    ];
+    const dados = base(eventos, [{ email: 'bia@x.com', min: 60 }]);
+    // padrão: mês inteiro → 3 lançamentos de outubro
+    expect(calcularRanking(dados, '2026-10').linhas.find((l) => l.email === 'ana@x.com')!.pontosPlataforma).toBe(90);
+
+    // 28/09 a 25/10: entra o de setembro, sai o de 26/10 (as duas pontas contam)
+    dados.config = { ...CONFIG_PADRAO, periodosPlataforma: { '2026-10': { inicio: '2026-09-28', fim: '2026-10-25' } } };
+    const r = calcularRanking(dados, '2026-10');
+    expect(r.periodo).toEqual({ inicio: '2026-09-28', fim: '2026-10-25' });
+    expect(r.linhas.find((l) => l.email === 'ana@x.com')!.pontosPlataforma).toBe(90);
+    expect(r.linhas.find((l) => l.email === 'bia@x.com')!.pontosAoVivo).toBe(70); // ao vivo segue o mês
+
+    // o período de outubro não mexe em setembro
+    expect(calcularRanking(dados, '2026-09').periodo).toEqual({ inicio: '2026-09-01', fim: '2026-09-30' });
   });
 
   it('posição na plataforma e virada no ranking final', () => {

@@ -13,11 +13,12 @@ import { capitalizar, dataBR, nomeMes } from '../lib/texto';
 import type { Encontro } from '../lib/types';
 import { useDados } from '../state/dados';
 import { DialogoEncontro, type Rascunho } from './DialogoEncontro';
+import { PeriodoPlataforma } from './PeriodoPlataforma';
 import { Aviso, BotaoArquivo, fmt } from './ui';
 
 const quando = (iso: string) => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 
-export function AbaImportar({ onEditarEncontro }: { onEditarEncontro: (e: Encontro) => void }) {
+export function AbaImportar({ mes, onEditarEncontro }: { mes: string; onEditarEncontro: (e: Encontro) => void }) {
   const { dados, atualizar } = useDados();
   const [erros, setErros] = useState<Record<string, string | null>>({});
   const [fila, setFila] = useState<Rascunho[]>([]);
@@ -152,6 +153,7 @@ export function AbaImportar({ onEditarEncontro }: { onEditarEncontro: (e: Encont
           ) : (
             <div className="status-import muted">Nenhuma planilha importada</div>
           )}
+          {dados.eventos.length > 0 && <PeriodoPlataforma mes={mes} />}
           {erros.eventos && <Aviso tipo="ruim"><p>{erros.eventos}</p></Aviso>}
           <div className="linha">
             <BotaoArquivo primario={!!dados.membros.length && !dados.eventos.length} multiplos onArquivos={importarEventos}>

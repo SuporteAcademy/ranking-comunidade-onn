@@ -16,6 +16,7 @@ create table if not exists public.membros (
   subplataformas  text,
   turmas          text,
   ultimo_acesso   text,
+  membro_desde    timestamp,            -- "Data de criação" da exportação; desempate por tempo de comunidade
   importado_em    timestamptz not null default now()
 );
 
@@ -98,6 +99,9 @@ create table if not exists public.configuracoes (
   pontos_ao_vivo      integer not null default 70,
   percentual_minimo   numeric(5,2) not null default 80,
   duracao_padrao_min  integer not null default 60,
+  -- ordem dos critérios de desempate (no app: tempoAoVivo, antiguidade, aoVivos)
+  criterios_desempate text[] not null default array['tempo_ao_vivo', 'antiguidade']::text[]
+    check (criterios_desempate <@ array['tempo_ao_vivo', 'antiguidade', 'ao_vivos']::text[]),
   atualizado_em       timestamptz not null default now()
 );
 
@@ -113,6 +117,14 @@ insert into public.regras_eventos (evento, conta) values
   ('Mensagem publicada', true),
   ('Postagem respondida', true)
 on conflict (evento) do nothing;
+
+-- Período da planilha de pontos lido em cada mês. Mês sem linha = mês inteiro.
+create table if not exists public.periodos_plataforma (
+  mes     date primary key check (extract(day from mes) = 1), -- primeiro dia do mês
+  inicio  date not null,
+  fim     date not null,
+  check (inicio <= fim)
+);
 
 create table if not exists public.exclusoes_ranking (
   id         bigint generated always as identity primary key,
@@ -177,14 +189,38 @@ where p.membro_email is not null
 group by e.id, e.data, e.duracao_min, e.percentual_minimo, p.membro_email
 having sum(p.duracao_seg) >= ceil(e.duracao_min * 60 * e.percentual_minimo / 100.0);
 
+-- Converte um critério de desempate em um número: quanto menor, mais à frente no ranking.
+create or replace function public.chave_desempate(criterio text, segundos bigint, encontros bigint, membro_desde timestamp)
+returns numeric
+language sql
+immutable
+set search_path = ''
+as $$
+  select case criterio
+    when 'tempo_ao_vivo' then -coalesce(segundos, 0)
+    when 'ao_vivos'      then -coalesce(encontros, 0)
+    when 'antiguidade'   then coalesce(extract(epoch from membro_desde), 9e15) -- sem data vai para o fim
+    else 0
+  end::numeric
+$$;
+
 create or replace view public.ranking_mensal
 with (security_invoker = true) as
-with plataforma as (
+with meses as (
+  select date_trunc('month', conquistado_em)::date as mes from public.eventos_pontuacao
+  union
+  select mes from public.periodos_plataforma
+),
+plataforma as (
   select
-    date_trunc('month', ev.conquistado_em)::date as mes,
+    m.mes,
     ev.email,
     sum(coalesce(r.pontos_fixos, ev.pontos)) as pontos
-  from public.eventos_pontuacao ev
+  from meses m
+  left join public.periodos_plataforma pp on pp.mes = m.mes
+  join public.eventos_pontuacao ev
+    on ev.conquistado_em::date between coalesce(pp.inicio, m.mes)
+                                   and coalesce(pp.fim, (m.mes + interval '1 month - 1 day')::date)
   join public.regras_eventos r on r.evento = ev.evento and r.conta
   group by 1, 2
 ),
@@ -195,6 +231,18 @@ ao_vivo as (
     count(*) as encontros,
     count(*) * (select pontos_ao_vivo from public.configuracoes limit 1) as pontos
   from public.presencas_qualificadas q
+  group by 1, 2
+),
+-- tempo total nos ao vivos do mês, inclusive nos encontros em que a pessoa não chegou ao mínimo
+tempo as (
+  select
+    date_trunc('month', e.data)::date as mes,
+    p.membro_email as email,
+    sum(p.duracao_seg) as segundos
+  from public.encontro_participacoes p
+  join public.encontros e on e.id = p.encontro_id
+  where p.membro_email is not null
+    and p.status_vinculo in ('email', 'email_nome', 'nome', 'manual')
   group by 1, 2
 ),
 juntos as (
@@ -210,7 +258,14 @@ juntos as (
 )
 select
   j.mes,
-  rank() over (partition by j.mes order by j.total desc) as posicao,
+  rank() over (
+    partition by j.mes
+    order by
+      j.total desc,
+      public.chave_desempate(cfg.criterios[1], t.segundos, j.encontros_qualificados, m.membro_desde),
+      public.chave_desempate(cfg.criterios[2], t.segundos, j.encontros_qualificados, m.membro_desde),
+      public.chave_desempate(cfg.criterios[3], t.segundos, j.encontros_qualificados, m.membro_desde)
+  ) as posicao,
   j.email,
   coalesce(m.nome, j.email) as nome,
   j.pontos_plataforma,
@@ -219,9 +274,13 @@ select
   end as posicao_plataforma,
   j.encontros_qualificados,
   j.pontos_ao_vivo,
-  j.total
+  j.total,
+  coalesce(t.segundos, 0) as segundos_ao_vivo,
+  m.membro_desde
 from juntos j
 left join public.membros m on m.email = j.email
+left join tempo t on t.mes = j.mes and t.email = j.email
+cross join (select criterios_desempate as criterios from public.configuracoes limit 1) cfg
 where j.total > 0
   and not exists (select 1 from public.exclusoes_ranking x where x.tipo = 'email' and x.valor = j.email)
   and not exists (
@@ -240,6 +299,7 @@ alter table public.vinculos_participantes enable row level security;
 alter table public.configuracoes          enable row level security;
 alter table public.regras_eventos         enable row level security;
 alter table public.exclusoes_ranking      enable row level security;
+alter table public.periodos_plataforma    enable row level security;
 alter table public.fechamentos_mensais    enable row level security;
 alter table public.fechamento_ranking     enable row level security;
 
@@ -248,7 +308,7 @@ declare t text;
 begin
   foreach t in array array[
     'membros', 'eventos_pontuacao', 'encontros', 'encontro_participacoes', 'vinculos_participantes',
-    'configuracoes', 'regras_eventos', 'exclusoes_ranking', 'fechamentos_mensais', 'fechamento_ranking'
+    'configuracoes', 'regras_eventos', 'exclusoes_ranking', 'periodos_plataforma', 'fechamentos_mensais', 'fechamento_ranking'
   ] loop
     if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = t and policyname = 'equipe_acesso_total') then
       execute format(

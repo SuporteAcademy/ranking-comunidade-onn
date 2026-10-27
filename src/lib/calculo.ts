@@ -1,5 +1,7 @@
 import type {
   Config,
+  CriterioDesempate,
+  Periodo,
   DadosApp,
   Encontro,
   EventoPontuacao,
@@ -86,6 +88,22 @@ export function mesDe(dataIso: string): string {
   return dataIso.slice(0, 7);
 }
 
+export function limitesDoMes(mes: string): Periodo {
+  const [ano, m] = mes.split('-').map(Number);
+  const ultimoDia = new Date(ano, m, 0).getDate();
+  return { inicio: `${mes}-01`, fim: `${mes}-${String(ultimoDia).padStart(2, '0')}` };
+}
+
+/** Período da planilha de pontos que entra no cálculo do mês (padrão: o mês inteiro). */
+export function periodoPlataforma(config: Config, mes: string): Periodo {
+  return config.periodosPlataforma[mes] ?? limitesDoMes(mes);
+}
+
+export function noPeriodo(dataIso: string, p: Periodo): boolean {
+  const dia = dataIso.slice(0, 10);
+  return dia >= p.inicio && dia <= p.fim;
+}
+
 export function encontrosDoMes(encontros: Encontro[], mes: string): Encontro[] {
   return encontros.filter((e) => mesDe(e.data) === mes).sort((a, b) => a.data.localeCompare(b.data));
 }
@@ -100,22 +118,54 @@ export function estaExcluido(config: Config, email: string, nome: string): boole
   return config.emailsExcluidos.includes(email) || !!casaPadrao(config.padroesExclusao, nome, email);
 }
 
-/** Posição com empate (1, 2, 2, 4): quem tem a mesma pontuação divide a posição. */
-function posicionar<T>(itens: T[], valor: (t: T) => number): Map<T, { posicao: number; empatado: boolean }> {
-  const ordenados = [...itens].sort((a, b) => valor(b) - valor(a));
+/**
+ * Posição com empate (1, 2, 2, 4): quem fica igual pelo comparador divide a posição.
+ * `comparar` devolve < 0 quando `a` fica na frente de `b`.
+ */
+function posicionar<T>(itens: T[], comparar: (a: T, b: T) => number): Map<T, { posicao: number; empatado: boolean }> {
+  const ordenados = [...itens].sort(comparar);
   const out = new Map<T, { posicao: number; empatado: boolean }>();
   ordenados.forEach((item, i) => {
-    const v = valor(item);
     const anterior = i > 0 ? ordenados[i - 1] : null;
-    const posicao = anterior !== null && valor(anterior) === v ? out.get(anterior)!.posicao : i + 1;
-    const empatado = ordenados.some((o, j) => j !== i && valor(o) === v);
+    const posicao = anterior !== null && comparar(anterior, item) === 0 ? out.get(anterior)!.posicao : i + 1;
+    const empatado = ordenados.some((o, j) => j !== i && comparar(o, item) === 0);
     out.set(item, { posicao, empatado });
   });
   return out;
 }
 
+type ParaDesempate = Pick<LinhaRanking, 'segundosAoVivo' | 'aoVivos' | 'membroDesde'>;
+
+const COMPARAR_CRITERIO: Record<CriterioDesempate, (a: ParaDesempate, b: ParaDesempate) => number> = {
+  tempoAoVivo: (a, b) => b.segundosAoVivo - a.segundosAoVivo,
+  aoVivos: (a, b) => b.aoVivos - a.aoVivos,
+  // cadastro mais antigo na frente; sem data vai para o fim
+  antiguidade: (a, b) => {
+    if (a.membroDesde === b.membroDesde) return 0;
+    if (!a.membroDesde) return 1;
+    if (!b.membroDesde) return -1;
+    return a.membroDesde < b.membroDesde ? -1 : 1;
+  },
+};
+
+function descreverCriterio(c: CriterioDesempate, l: ParaDesempate): string {
+  if (c === 'tempoAoVivo') return `${Math.round(l.segundosAoVivo / 60)} min nos ao vivos`;
+  if (c === 'aoVivos') return `${l.aoVivos} ao vivo(s) com presença`;
+  return l.membroDesde ? `membro desde ${l.membroDesde.slice(8, 10)}/${l.membroDesde.slice(5, 7)}/${l.membroDesde.slice(0, 4)}` : 'sem data de cadastro';
+}
+
+export function compararDesempate(criterios: CriterioDesempate[], a: ParaDesempate, b: ParaDesempate): number {
+  for (const c of criterios) {
+    const r = COMPARAR_CRITERIO[c](a, b);
+    if (r) return r;
+  }
+  return 0;
+}
+
 export interface RankingMes {
   mes: string;
+  /** período lido da planilha de pontos */
+  periodo: Periodo;
   linhas: LinhaRanking[];
   excluidos: LinhaRanking[];
   encontros: ResultadoEncontro[];
@@ -126,10 +176,12 @@ export function calcularRanking(dados: DadosApp, mes: string): RankingMes {
   const { config } = dados;
   const diretorio = montarDiretorio(dados.membros, dados.eventos);
   const encontros = encontrosDoMes(dados.encontros, mes).map((e) => calcularEncontro(e, diretorio, dados));
+  const periodo = periodoPlataforma(config, mes);
   const eventosContados = Object.entries(config.regrasEventos)
     .filter(([, r]) => r.conta)
     .map(([nome]) => nome);
 
+  const membrosDesde = new Map(dados.membros.map((m) => [m.email, m.membroDesde]));
   const mapa = new Map<string, LinhaRanking>();
   const linha = (email: string, nome: string): LinhaRanking => {
     let l = mapa.get(email);
@@ -143,9 +195,12 @@ export function calcularRanking(dados: DadosApp, mes: string): RankingMes {
         encontrosQualificados: [],
         pontosAoVivo: 0,
         total: 0,
+        segundosAoVivo: 0,
+        membroDesde: membrosDesde.get(email),
         posicao: 0,
         posicaoPlataforma: null,
         empatado: false,
+        decididoPor: null,
         excluido: false,
       };
       mapa.set(email, l);
@@ -154,7 +209,7 @@ export function calcularRanking(dados: DadosApp, mes: string): RankingMes {
   };
 
   for (const e of dados.eventos) {
-    if (mesDe(e.data) !== mes) continue;
+    if (!noPeriodo(e.data, periodo)) continue;
     const pts = pontosDoEvento(e, config);
     if (pts === null) continue;
     const l = linha(e.email, e.nome);
@@ -164,8 +219,10 @@ export function calcularRanking(dados: DadosApp, mes: string): RankingMes {
     l.pontosPlataforma += pts;
   }
 
+  const tempoNoMes = new Map<string, number>();
   for (const r of encontros) {
     for (const p of r.pessoas) {
+      tempoNoMes.set(p.email, (tempoNoMes.get(p.email) ?? 0) + p.segundos);
       if (!p.qualificado) continue;
       const l = linha(p.email, p.nome);
       l.aoVivos += 1;
@@ -177,23 +234,35 @@ export function calcularRanking(dados: DadosApp, mes: string): RankingMes {
   const todas = [...mapa.values()];
   for (const l of todas) {
     l.total = l.pontosPlataforma + l.pontosAoVivo;
+    l.segundosAoVivo = tempoNoMes.get(l.email) ?? 0;
     l.excluido = estaExcluido(config, l.email, l.nome);
   }
   const validas = todas.filter((l) => !l.excluido && l.total > 0);
 
   const comPlataforma = validas.filter((l) => l.pontosPlataforma > 0);
-  const posPlat = posicionar(comPlataforma, (l) => l.pontosPlataforma);
+  const posPlat = posicionar(comPlataforma, (a, b) => b.pontosPlataforma - a.pontosPlataforma);
   for (const l of comPlataforma) l.posicaoPlataforma = posPlat.get(l)!.posicao;
 
-  const pos = posicionar(validas, (l) => l.total);
+  const comparar = (a: LinhaRanking, b: LinhaRanking) => b.total - a.total || compararDesempate(config.desempate, a, b);
+  const pos = posicionar(validas, comparar);
   for (const l of validas) Object.assign(l, pos.get(l));
 
-  const ordenar = (a: LinhaRanking, b: LinhaRanking) =>
-    b.total - a.total || b.pontosAoVivo - a.pontosAoVivo || a.nome.localeCompare(b.nome, 'pt-BR');
+  const ordenar = (a: LinhaRanking, b: LinhaRanking) => comparar(a, b) || a.nome.localeCompare(b.nome, 'pt-BR');
+  validas.sort(ordenar);
+
+  // Para quem empatou no total: mostra os critérios que foi preciso usar contra o vizinho de cima e o de baixo
+  // (ex.: mesmo tempo nos ao vivos que o próximo → decidiu o tempo de comunidade).
+  validas.forEach((l, i) => {
+    const vizinhos = [validas[i - 1], validas[i + 1]].filter((o) => o && o.total === l.total);
+    const usados = vizinhos.map((o) => config.desempate.findIndex((c) => COMPARAR_CRITERIO[c](l, o) !== 0));
+    const ate = Math.max(-1, ...usados);
+    if (ate >= 0) l.decididoPor = config.desempate.slice(0, ate + 1).map((c) => descreverCriterio(c, l)).join(' · ');
+  });
 
   return {
     mes,
-    linhas: validas.sort(ordenar),
+    periodo,
+    linhas: validas,
     excluidos: todas.filter((l) => l.excluido && l.total > 0).sort(ordenar),
     encontros,
     eventosContados,

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { gerarBackup, lerBackup } from '../lib/armazenamento';
 import { baixarArquivo } from '../lib/exportacoes';
-import type { Config, RegraEvento } from '../lib/types';
+import { CRITERIOS_DESEMPATE, type Config, type CriterioDesempate, type RegraEvento } from '../lib/types';
 import { useDados } from '../state/dados';
 import { Aviso, BotaoArquivo, fmt } from './ui';
 
@@ -35,6 +35,14 @@ export function AbaAjustes() {
     if (p && !config.padroesExclusao.includes(p)) mudar({ padroesExclusao: [...config.padroesExclusao, p] });
     setNovoPadrao('');
   };
+
+  const inativos = (Object.keys(CRITERIOS_DESEMPATE) as CriterioDesempate[]).filter((c) => !config.desempate.includes(c));
+  const moverCriterio = (i: number, delta: number) => {
+    const lista = [...config.desempate];
+    [lista[i], lista[i + delta]] = [lista[i + delta], lista[i]];
+    mudar({ desempate: lista });
+  };
+  const semDataCadastro = dados.membros.length > 0 && !dados.membros.some((m) => m.membroDesde);
 
   const vinculos = Object.values(dados.vinculos).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
 
@@ -196,6 +204,61 @@ export function AbaAjustes() {
               ))}
             </div>
           </>
+        )}
+      </section>
+
+      <section className="cartao pilha">
+        <div>
+          <h3>Critério de desempate</h3>
+          <p className="muted small" style={{ margin: 0 }}>
+            Quando duas pessoas empatam no total, vale o primeiro critério da lista; se empatarem nele também, o seguinte.
+          </p>
+        </div>
+        {config.desempate.length ? (
+          <ol className="lista-encontros" style={{ listStyle: 'none' }}>
+            {config.desempate.map((c, i) => (
+              <li key={c}>
+                <span>
+                  <strong className="num">{i + 1}º</strong> {CRITERIOS_DESEMPATE[c]}
+                </span>
+                <span className="linha" style={{ gap: 4 }}>
+                  <button className="btn mini" disabled={i === 0} onClick={() => moverCriterio(i, -1)} aria-label="Subir">
+                    ↑
+                  </button>
+                  <button
+                    className="btn mini"
+                    disabled={i === config.desempate.length - 1}
+                    onClick={() => moverCriterio(i, 1)}
+                    aria-label="Descer"
+                  >
+                    ↓
+                  </button>
+                  <button className="btn mini perigo" onClick={() => mudar({ desempate: config.desempate.filter((x) => x !== c) })}>
+                    Remover
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <div className="status-import muted">Nenhum critério: quem empata no total divide a posição.</div>
+        )}
+        {inativos.length > 0 && (
+          <div className="linha">
+            {inativos.map((c) => (
+              <button key={c} className="btn mini" onClick={() => mudar({ desempate: [...config.desempate, c] })}>
+                + {CRITERIOS_DESEMPATE[c]}
+              </button>
+            ))}
+          </div>
+        )}
+        {semDataCadastro && config.desempate.includes('antiguidade') && (
+          <Aviso>
+            <p>
+              A planilha de membros importada não tem a data de cadastro. Importe a exportação de membros de novo (ela
+              tem a coluna “Data de criação”) para o critério de tempo de comunidade funcionar.
+            </p>
+          </Aviso>
         )}
       </section>
 

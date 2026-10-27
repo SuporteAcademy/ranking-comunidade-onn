@@ -29,7 +29,8 @@ nunca saem do seu navegador.
 
 1. **Importar → Membros da comunidade**: exportação de membros da plataforma.
 2. **Importar → Pontos da plataforma**: relatório de pontuação. Pode ser o relatório completo; o
-   sistema separa por mês e não duplica o que já foi importado.
+   sistema separa por mês e não duplica o que já foi importado. Por padrão entra o mês inteiro, mas dá
+   para escolher outro período (ex.: de 28/09 a 25/10) — fica salvo só para aquele mês.
 3. **Importar → Presença nos ao vivos**: o relatório de participantes do Meet de cada encontro
    (dá para escolher vários arquivos de uma vez). Para cada um, informe a data — se o nome do arquivo
    tiver a data (`presenca 24-09-2026.xlsx`), ela já vem preenchida.
@@ -48,6 +49,8 @@ nunca saem do seu navegador.
   *Postagem respondida*; *Login* e *Aula concluída* ficam de fora). Vale o valor da planilha, a menos
   que você fixe um valor — útil porque a plataforma já mudou a pontuação ao longo do tempo (a mensagem
   já valeu 5, 10 e 30).
+- **Período**: os pontos da plataforma entram pelo período escolhido para o mês (padrão: do dia 1 ao último
+  dia; as duas datas contam). Os encontros ao vivo entram pela data de cada encontro, dentro do mês.
 - **Ao vivo**: tempo mínimo = duração do encontro × presença mínima (60 min × 80% = **48 min**). Cada
   encontro pode ter duração e percentual próprios.
 - **Mais de uma entrada da mesma pessoa** (caiu e voltou, entrou pelo celular como convidada): os tempos
@@ -56,8 +59,10 @@ nunca saem do seu navegador.
   70 pontos. Membro com situação diferente de "Ativo" também não.
 - **Fora do ranking**: contas da equipe e bots de gravação (regras em Ajustes; padrão: `coimbraacademy`,
   `coimbracademy`, `curseduca.com`, `notetaker`, `fireflies`…). Dá para tirar alguém pelo botão **Tirar**.
-- **Empate**: quem tem os mesmos pontos divide a posição. Se houver empate entre 1º e 2º, o sistema avisa
-  antes de você divulgar — o critério de desempate é decisão de vocês.
+- **Desempate**: quando o total empata, fica na frente quem **passou mais tempo nos ao vivos do mês** (soma
+  de todos os encontros, inclusive os em que não chegou aos 80%); se empatar também, quem tem **mais tempo
+  de comunidade** (data de cadastro mais antiga, da coluna "Data de criação" da planilha de membros). A ordem
+  e os critérios mudam em Ajustes. Se mesmo assim empatar entre 1º e 2º, o sistema avisa antes de divulgar.
 - **▲▼ no ranking**: quantas posições a pessoa ganhou ou perdeu em relação ao ranking só da plataforma.
 
 ## Como o sistema descobre quem é quem na lista do Meet
@@ -97,7 +102,7 @@ supabase/migrations/     estrutura do banco para o futuro
 
 A migration `supabase/migrations/20261026120000_gamificacao_inicial.sql` cria as tabelas
 (`membros`, `eventos_pontuacao`, `encontros`, `encontro_participacoes`, `vinculos_participantes`,
-`configuracoes`, `regras_eventos`, `exclusoes_ranking`, `fechamentos_mensais`, `fechamento_ranking`),
+`configuracoes`, `regras_eventos`, `periodos_plataforma`, `exclusoes_ranking`, `fechamentos_mensais`, `fechamento_ranking`),
 as views `presencas_qualificadas` e `ranking_mensal`, e RLS liberando só usuários autenticados.
 Ela só cria objetos novos. O caminho é trocar `src/lib/armazenamento.ts` por chamadas a essas tabelas — o
 resto do app não muda.

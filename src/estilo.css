@@ -449,6 +449,16 @@ select:focus-visible {
   font-size: 14px;
 }
 
+.periodo {
+  display: grid;
+  gap: 6px;
+}
+
+.periodo .entrada {
+  padding: 6px 8px;
+  font-size: 14px;
+}
+
 /* ---------- Tabelas ---------- */
 
 .tabela-wrap {

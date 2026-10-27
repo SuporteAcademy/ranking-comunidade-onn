@@ -12,6 +12,8 @@ export interface Membro {
   subplataformas?: string;
   turmas?: string;
   ultimoAcesso?: string;
+  /** data de cadastro na plataforma (ISO), usada no desempate por tempo de comunidade */
+  membroDesde?: string;
 }
 
 /** Uma linha do relatório de pontos da plataforma. Tabela: eventos_pontuacao */
@@ -79,6 +81,27 @@ export interface Config {
   padroesExclusao: string[];
   /** E-mails de membros tirados do ranking manualmente */
   emailsExcluidos: string[];
+  /**
+   * Período lido da planilha de pontos em cada mês (chave YYYY-MM).
+   * Mês sem entrada = do dia 1 ao último dia do mês.
+   */
+  periodosPlataforma: Record<string, Periodo>;
+  /** Critérios usados, em ordem, quando duas pessoas empatam no total */
+  desempate: CriterioDesempate[];
+}
+
+export type CriterioDesempate = 'tempoAoVivo' | 'antiguidade' | 'aoVivos';
+
+export const CRITERIOS_DESEMPATE: Record<CriterioDesempate, string> = {
+  tempoAoVivo: 'Mais tempo assistindo aos ao vivos do mês',
+  antiguidade: 'Mais tempo de comunidade (cadastro mais antigo)',
+  aoVivos: 'Mais ao vivos com presença válida no mês',
+};
+
+/** Datas YYYY-MM-DD, as duas inclusivas */
+export interface Periodo {
+  inicio: string;
+  fim: string;
 }
 
 export const CONFIG_PADRAO: Config = {
@@ -91,6 +114,8 @@ export const CONFIG_PADRAO: Config = {
   },
   padroesExclusao: ['coimbraacademy', 'coimbracademy', 'curseduca.com', 'notetaker', 'fireflies', 'read.ai', 'otter.ai'],
   emailsExcluidos: [],
+  periodosPlataforma: {},
+  desempate: ['tempoAoVivo', 'antiguidade'],
 };
 
 export interface Importacao {
@@ -164,8 +189,14 @@ export interface LinhaRanking {
   encontrosQualificados: string[];
   pontosAoVivo: number;
   total: number;
+  /** tempo somado em todos os ao vivos do mês, mesmo nos que não pontuaram */
+  segundosAoVivo: number;
+  membroDesde?: string;
   posicao: number;
   posicaoPlataforma: number | null;
+  /** empate total: mesmo total e mesmos valores em todos os critérios de desempate */
   empatado: boolean;
+  /** quando o total empatou com alguém, qual critério decidiu (ex.: "312 min nos ao vivos") */
+  decididoPor: string | null;
   excluido: boolean;
 }

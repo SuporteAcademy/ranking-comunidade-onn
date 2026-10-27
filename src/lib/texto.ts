@@ -76,6 +76,11 @@ export function formatarMinutos(segundos: number): string {
   return m ? `${h} h ${m} min` : `${h} h`;
 }
 
+/** Mínimo exigido em minutos inteiros (51,2 min → 52 min, já que o Meet conta minutos cheios). */
+export function minutosMinimos(segundos: number): number {
+  return Math.ceil(segundos / 60);
+}
+
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 
 export function nomeMes(mes: string): string {

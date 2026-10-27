@@ -83,9 +83,11 @@ export function App() {
             </Aviso>
           </div>
         )}
-        {abaAtual === 'importar' && <AbaImportar onEditarEncontro={setEditando} />}
+        {abaAtual === 'importar' && <AbaImportar mes={mes} onEditarEncontro={setEditando} />}
         {abaAtual === 'presencas' && <AbaPresencas ranking={ranking} diretorio={diretorio} onEditarEncontro={setEditando} />}
-        {abaAtual === 'ranking' && <AbaRanking ranking={ranking} onIrPresencas={() => setAba('presencas')} />}
+        {abaAtual === 'ranking' && (
+          <AbaRanking ranking={ranking} onIrPresencas={() => setAba('presencas')} onIrAjustes={() => setAba('ajustes')} />
+        )}
         {abaAtual === 'ajustes' && <AbaAjustes />}
       </main>
 

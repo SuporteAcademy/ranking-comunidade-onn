@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { minimoSegundos } from '../lib/calculo';
-import { dataBR } from '../lib/texto';
+import { dataBR, minutosMinimos } from '../lib/texto';
 import type { Encontro } from '../lib/types';
 import { Aviso, Modal } from './ui';
 
@@ -24,7 +24,7 @@ export function DialogoEncontro({
   const editando = !!rascunho.id;
   const duplicado = existentes.find((e) => e.data === form.data && e.id !== rascunho.id);
   const valido = /^\d{4}-\d{2}-\d{2}$/.test(form.data) && form.duracaoMin > 0 && form.percentualMinimo > 0 && form.percentualMinimo <= 100;
-  const minimo = Math.round(minimoSegundos(form) / 60);
+  const minimo = minutosMinimos(minimoSegundos(form));
   const passam = form.linhas.filter((l) => l.duracaoSeg >= minimoSegundos(form)).length;
   const titulo = form.titulo.trim() || `Encontro ao vivo ${form.data ? dataBR(form.data) : ''}`;
 

@@ -78,6 +78,7 @@ export function parseMembros(linhas: Linhas): Membro[] {
       subplataformas: ['subplataformas'],
       turmas: ['turmas'],
       ultimoAcesso: ['ultimo acesso'],
+      criacao: ['data de criacao', 'data de cadastro', 'criado em'],
     },
     ['nome', 'email'],
     'membros',
@@ -96,6 +97,7 @@ export function parseMembros(linhas: Linhas): Membro[] {
       subplataformas: pegar('subplataformas'),
       turmas: pegar('turmas'),
       ultimoAcesso: pegar('ultimoAcesso'),
+      membroDesde: mapa.criacao >= 0 ? (parseDataHora(l[mapa.criacao]) ?? undefined) : undefined,
     });
   }
   return [...porEmail.values()];

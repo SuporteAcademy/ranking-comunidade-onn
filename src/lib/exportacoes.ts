@@ -1,8 +1,8 @@
 import * as XLSX from 'xlsx';
 import type { RankingMes } from './calculo';
-import { mesDe, pontosDoEvento } from './calculo';
-import type { DadosApp, LinhaRanking } from './types';
-import { dataBR, nomeMes } from './texto';
+import { noPeriodo, pontosDoEvento } from './calculo';
+import { CRITERIOS_DESEMPATE, type DadosApp, type LinhaRanking } from './types';
+import { dataBR, minutosMinimos, nomeMes } from './texto';
 import { nomeCompleto } from './vinculo';
 
 const ROTULO_STATUS: Record<string, string> = {
@@ -50,6 +50,9 @@ function linhaPlanilha(l: LinhaRanking, r: RankingMes) {
   out['Ao vivos com presença'] = l.aoVivos;
   out['Pontos ao vivo'] = l.pontosAoVivo;
   out['Total'] = l.total;
+  out['Tempo nos ao vivos (min)'] = Math.round(l.segundosAoVivo / 60);
+  out['Membro desde'] = l.membroDesde ? dataBR(l.membroDesde) : '';
+  out['Desempate'] = l.decididoPor ?? '';
   out['Variação'] = l.excluido ? '' : variacao(l);
   out['Empate'] = l.empatado ? 'sim' : '';
   return out;
@@ -105,7 +108,7 @@ export function baixarRanking(r: RankingMes, dados: DadosApp): void {
           'Membro': l.membro?.nome ?? '',
           'E-mail do membro': l.membro?.email ?? '',
           'Tempo total da pessoa (min)': p ? Math.round(p.segundos / 60) : '',
-          'Mínimo (min)': Math.round(enc.minimoSeg / 60),
+          'Mínimo (min)': minutosMinimos(enc.minimoSeg),
           'Pontua': p?.qualificado ? 'sim' : 'não',
           'Observação': p?.inativo ? 'Membro inativo no cadastro' : l.motivo,
         };
@@ -117,15 +120,19 @@ export function baixarRanking(r: RankingMes, dados: DadosApp): void {
 
   add('Regras usadas', [
     { Regra: 'Mês', Valor: nomeMes(r.mes) },
+    { Regra: 'Pontos da plataforma lidos de', Valor: `${dataBR(r.periodo.inicio)} a ${dataBR(r.periodo.fim)}` },
     { Regra: 'Pontos por ao vivo', Valor: dados.config.pontosAoVivo },
     ...r.encontros.map((e) => ({
       Regra: `Encontro ${dataBR(e.encontro.data)}`,
-      Valor: `${e.encontro.duracaoMin} min, presença mínima ${e.encontro.percentualMinimo}% (${Math.round(e.minimoSeg / 60)} min)`,
+      Valor: `${e.encontro.duracaoMin} min, presença mínima ${e.encontro.percentualMinimo}% (${minutosMinimos(e.minimoSeg)} min)`,
     })),
     ...r.eventosContados.map((ev) => {
       const fixo = dados.config.regrasEventos[ev]?.pontosFixos;
       return { Regra: `Evento contado: ${ev}`, Valor: fixo === null || fixo === undefined ? 'valor da planilha' : `${fixo} pts fixos` };
     }),
+    ...(dados.config.desempate.length
+      ? dados.config.desempate.map((c, i) => ({ Regra: `Desempate ${i + 1}º`, Valor: CRITERIOS_DESEMPATE[c] }))
+      : [{ Regra: 'Desempate', Valor: 'nenhum critério (empate divide a posição)' }]),
     { Regra: 'Gerado em', Valor: new Date().toLocaleString('pt-BR') },
   ]);
 
@@ -139,7 +146,7 @@ export function baixarRanking(r: RankingMes, dados: DadosApp): void {
 export function baixarPlanilhaPlataforma(r: RankingMes, dados: DadosApp): void {
   const linhas: Record<string, string | number>[] = [];
   for (const e of dados.eventos) {
-    if (mesDe(e.data) !== r.mes) continue;
+    if (!noPeriodo(e.data, r.periodo)) continue;
     const pts = pontosDoEvento(e, dados.config);
     if (pts === null) continue;
     linhas.push({
@@ -162,7 +169,7 @@ export function baixarPlanilhaPlataforma(r: RankingMes, dados: DadosApp): void {
         CPF: cpfs.get(p.email) ?? '',
         Email: p.email,
         'Pontuação': dados.config.pontosAoVivo,
-        'Razão/Descrição': `Presença de ${Math.round(p.segundos / 60)} min (mínimo ${Math.round(enc.minimoSeg / 60)} min)`,
+        'Razão/Descrição': `Presença de ${Math.round(p.segundos / 60)} min (mínimo ${minutosMinimos(enc.minimoSeg)} min)`,
         Evento: 'Encontro ao vivo',
         Origem: enc.encontro.titulo,
         'Data de Conquista': `${dataBR(enc.encontro.data)} 20:00:00`,

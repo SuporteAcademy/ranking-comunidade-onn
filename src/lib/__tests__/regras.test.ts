@@ -161,6 +161,22 @@ describe('ranking', () => {
     expect(r.linhas.every((l) => l.posicao === 1 && l.empatado)).toBe(true);
   });
 
+  it('desempate usa o tempo real, mesmo acima de 60 min', () => {
+    const dados = base([], [
+      { email: 'ana@x.com', min: 65 },
+      { email: 'bia@x.com', min: 75 },
+      { email: 'caio@x.com', min: 60 },
+    ]);
+    const r = calcularRanking(dados, '2026-10');
+    expect(r.linhas.map((l) => [l.email, l.total, l.posicao])).toEqual([
+      ['bia@x.com', 70, 1],
+      ['ana@x.com', 70, 2],
+      ['caio@x.com', 70, 3],
+    ]);
+    expect(r.linhas.map((l) => l.segundosAoVivo / 60)).toEqual([75, 65, 60]);
+    expect(r.linhas.some((l) => l.empatado)).toBe(false);
+  });
+
   it('valor fixo substitui o da planilha', () => {
     const dados = base([ev('ana@x.com', 'Mensagem publicada', 10)], []);
     dados.config = {

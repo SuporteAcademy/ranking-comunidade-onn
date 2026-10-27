@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { noPeriodo, type RankingMes } from '../lib/calculo';
 import { baixarPlanilhaPlataforma, baixarRanking, textoCanal } from '../lib/exportacoes';
-import { dataBR, normalizar, nomeMes } from '../lib/texto';
+import { dataBR, formatarMinutos, normalizar, nomeMes } from '../lib/texto';
 import { CRITERIOS_DESEMPATE, type LinhaRanking } from '../lib/types';
 import { useDados } from '../state/dados';
 import { PeriodoPlataforma } from './PeriodoPlataforma';
@@ -33,6 +33,7 @@ export function AbaRanking({
   const pendencias = encontros.reduce((s, e) => s + e.pendenciasRelevantes, 0);
   const temEventosNoPeriodo = dados.eventos.some((e) => noPeriodo(e.data, ranking.periodo));
   const empatePremio = linhas.filter((l) => l.posicao <= 2 && l.empatado);
+  const semDataCadastro = empatePremio.some((l) => !l.membroDesde) && dados.config.desempate.includes('antiguidade');
   const lideresPlataforma = linhas.filter((l) => l.posicaoPlataforma === 1);
   const filtradas = busca.trim()
     ? linhas.filter((l) => normalizar(`${l.nome} ${l.email}`).includes(normalizar(busca)))
@@ -115,10 +116,13 @@ export function AbaRanking({
       {empatePremio.length > 1 && (
         <Aviso tipo="ruim">
           <p>
-            <strong>Empate na zona de premiação:</strong> {empatePremio.map((l) => `${l.nome} (${fmt(l.total)})`).join(', ')}.
-            {dados.config.desempate.length
-              ? ' Eles empatam também nos critérios de desempate — decida antes de divulgar ou acrescente outro critério em Ajustes.'
-              : ' Escolha um critério de desempate em Ajustes antes de divulgar.'}
+            <strong>Empate na zona de premiação:</strong>{' '}
+            {empatePremio.map((l) => `${l.nome} (${fmt(l.total)} pts, ${formatarMinutos(l.segundosAoVivo)} nos ao vivos)`).join(', ')}.{' '}
+            {!dados.config.desempate.length
+              ? 'Escolha um critério de desempate em Ajustes antes de divulgar.'
+              : semDataCadastro
+                ? 'Ficaram exatamente o mesmo tempo (o Meet só informa minutos inteiros) e o critério de tempo de comunidade está sem a data de cadastro — importe de novo a planilha de membros na aba Importar para desempatar.'
+                : 'Empatam também em todos os critérios de desempate — decida antes de divulgar ou acrescente outro critério em Ajustes.'}
           </p>
         </Aviso>
       )}
@@ -209,25 +213,30 @@ export function AbaRanking({
                       {l.posicaoPlataforma && <div className="muted small">era {l.posicaoPlataforma}º</div>}
                     </td>
                     <td className="dir num">
-                      {l.aoVivos ? (
-                        <>
-                          {fmt(l.pontosAoVivo)}
-                          <div className="muted small">
-                            {l.aoVivos} de {encontros.length}
-                          </div>
-                        </>
-                      ) : (
-                        <span className="muted">0</span>
+                      {l.aoVivos ? fmt(l.pontosAoVivo) : <span className="muted">0</span>}
+                      {l.segundosAoVivo > 0 && (
+                        <div
+                          className="muted small"
+                          style={{ whiteSpace: 'nowrap' }}
+                          title="Tempo total nos ao vivos do mês (conta no desempate, mesmo passando de 60 min)"
+                        >
+                          {l.aoVivos} de {encontros.length} · {formatarMinutos(l.segundosAoVivo)}
+                        </div>
                       )}
                     </td>
                     <td className="dir num">
                       <span className="total">{fmt(l.total)}</span>
-                      {l.decididoPor && (
-                        <div className="muted small" title="Critério que desempatou com quem tem o mesmo total">
-                          desempate: {l.decididoPor}
+                      {l.empatado ? (
+                        <div className="selo ruim" title="Mesmo total e mesmos valores em todos os critérios de desempate">
+                          empate
                         </div>
+                      ) : (
+                        l.decididoPor && (
+                          <div className="muted small" title="Critério que desempatou com quem tem o mesmo total">
+                            desempate: {l.decididoPor}
+                          </div>
+                        )
                       )}
-                      {l.empatado && <div className="selo ruim">empate</div>}
                     </td>
                     <td className="dir">
                       <button className="btn mini" title="Tirar do ranking (equipe, teste…)" onClick={() => excluir(l.email)}>

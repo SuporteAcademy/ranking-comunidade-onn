@@ -254,7 +254,8 @@ export function AbaPresencas({
           <div>
             <h3>Resumo do mês</h3>
             <p className="muted small" style={{ margin: 0 }}>
-              ✓ = ganhou os pontos naquele encontro. Número = minutos, quando ficou abaixo do mínimo.
+              ✓ = ganhou os pontos naquele encontro. O número é o tempo que a pessoa ficou (mesmo passando de 60 min, conta
+              no desempate).
             </p>
           </div>
           <div className="tabela-wrap">
@@ -281,7 +282,9 @@ export function AbaPresencas({
                     {encontros.map((e) => {
                       const x = p.por.get(e.encontro.id);
                       return x?.ok ? (
-                        <td key={e.encontro.id} className="marca-ok" aria-label="presença válida">✓</td>
+                        <td key={e.encontro.id} className="marca-ok num" aria-label="presença válida">
+                          ✓ {Math.round(x.seg / 60)}′
+                        </td>
                       ) : (
                         <td key={e.encontro.id} className="marca-nao num">{x ? `${Math.round(x.seg / 60)}′` : '—'}</td>
                       );
